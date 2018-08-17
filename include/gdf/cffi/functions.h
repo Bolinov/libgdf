@@ -32,6 +32,15 @@ const char *gdf_ipc_parser_get_schema_json(gdf_ipc_parser_type *handle) ;
 const char *gdf_ipc_parser_get_layout_json(gdf_ipc_parser_type *handle) ;
 
 
+/* I/O */
+
+gdf_error
+read_parquet(const char *const        filename,
+             const char *const        engine,
+             const char *const *const columns,
+             gdf_column **const       out_gdf_columns,
+             size_t *const            out_gdf_columns_length);
+
 /* sorting */
 gdf_radixsort_plan_type* gdf_radixsort_plan(size_t num_items, int descending,
                                         unsigned begin_bit, unsigned end_bit);
