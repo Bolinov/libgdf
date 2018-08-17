@@ -55,7 +55,7 @@ set(file_reader_SRCS
     ${CMAKE_SOURCE_DIR}/src/parquet/row_group_reader_contents.cpp
     ${CMAKE_SOURCE_DIR}/src/arrow/cu_decoder.cu
     ${CMAKE_SOURCE_DIR}/src/arrow/util/pinned_allocator.cu
-    
+
     )
 
 function(GDF_ADD_PARQUET_BENCHMARK TARGET)
@@ -67,7 +67,7 @@ function(GDF_ADD_PARQUET_BENCHMARK TARGET)
             PUBLIC ${CMAKE_SOURCE_DIR}/src/parquet)
         target_link_libraries(${TARGET}
             Google::Benchmark Google::Benchmark::Main
-            Threads::Threads gdf gdf-parquet)
+            Threads::Threads gdf)
     endif()
 endfunction()
 
@@ -75,7 +75,7 @@ function(GDF_ADD_PARQUET_TEST TARGET)
     list(REMOVE_AT ARGV 0)
     cuda_add_executable(${TARGET} ${ARGV})
     target_include_directories(${TARGET} PUBLIC ${CMAKE_SOURCE_DIR}/src/parquet)
-    target_link_libraries(${TARGET} GTest::GTest GTest::Main gdf-parquet)
+    target_link_libraries(${TARGET} GTest::GTest GTest::Main gdf)
     get_property(ARGN TARGET ${TARGET} PROPERTY SOURCES)
     gtest_add_tests(${TARGET} "" ${ARGN})
 endfunction()
