@@ -24,7 +24,7 @@ requirements:
     - cmake
 
   run:
-    - pyarrow 0.10.*
+    - pyarrow 0.9.*
 
 test:
   commands:
