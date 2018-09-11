@@ -125,6 +125,19 @@ host_valid_pointer create_and_init_valid(size_t length, bool all_bits_on = false
   return host_valid_pointer{ valid_bits, deleter };
 }
 
+template<class T>
+void print_column_with_nulls(const std::vector<T> &aggregation_column, const host_valid_pointer &groupby_valid){
+    auto functor = [groupby_valid, &aggregation_column](int index) -> std::__cxx11::string {
+            if (gdf::util::get_bit(groupby_valid.get(), index))
+                return std::__cxx11::to_string((int)aggregation_column[index]);
+            return std::__cxx11::string("@");
+        };
+    std::vector<int> indexes(aggregation_column.size());
+    iota(begin(indexes), end(indexes), 0);
+    transform(indexes.begin(), indexes.end(), std::ostream_iterator<std::__cxx11::string>(std::cout, ", "), functor);
+    std::cout << std::endl;
+}
+
 // A new instance of this class will be created for each *TEST(GroupByTest, ...)
 // Put all repeated stuff for each test here
 template <typename test_parameters>
@@ -141,7 +154,8 @@ struct GDFGroupByTest : public testing::Test
 
   std::vector<key_type> groupby_column;
   std::vector<value_type> aggregation_column;
-  host_valid_pointer valid_column;
+  host_valid_pointer groupby_valid;
+  host_valid_pointer aggregation_valid;
 
   gdf_col_pointer gdf_groupby_column;
   gdf_col_pointer gdf_aggregation_column; 
@@ -156,7 +170,7 @@ struct GDFGroupByTest : public testing::Test
 
   ~GDFGroupByTest() {} 
 
-  std::tuple<std::vector<key_type>, std::vector<value_type>, host_valid_pointer>
+  std::tuple<std::vector<key_type>, std::vector<value_type>, host_valid_pointer, host_valid_pointer>
     create_reference_input(const size_t num_keys, const size_t num_values_per_key, const int max_key = RAND_MAX, const int max_value = RAND_MAX, bool print = false) 
     {
       const size_t input_size = num_keys * num_values_per_key;
@@ -167,7 +181,8 @@ struct GDFGroupByTest : public testing::Test
       groupby_column.reserve(input_size);
       aggregation_column.reserve(input_size);
 
-      host_valid_pointer valid_column = create_and_init_valid(input_size);
+      host_valid_pointer groupby_valid = create_and_init_valid(input_size);
+      host_valid_pointer aggregation_valid = create_and_init_valid(input_size);
 
       for(size_t i = 0; i < num_keys; ++i )
       {
@@ -215,22 +230,13 @@ struct GDFGroupByTest : public testing::Test
           << " Values per key: " << num_values_per_key << "\n";
 
         std::cout << "Group By Column. Size: " << groupby_column.size() << " \n";
-        std::copy(groupby_column.begin(), groupby_column.end(), std::ostream_iterator<key_type>(std::cout, " "));
-        std::cout << "\n";
+        print_column_with_nulls(groupby_column, groupby_valid);
 
         std::cout << "Aggregation Column. Size: " << aggregation_column.size() << "\n";
-        auto functor = [&valid_column, &aggregation_column](int index) -> std::string {
-            if (gdf::util::get_bit(valid_column.get(), index))
-                return std::to_string((int)aggregation_column[index]);
-            return std::string("@");
-        };
-        std::vector<int> indexes(aggregation_column.size());
-        std::iota(std::begin(indexes), std::end(indexes), 0);
-        std::transform(indexes.begin(), indexes.end(), std::ostream_iterator<std::string>(std::cout, ", "), functor);
-        std::cout << std::endl;
+        print_column_with_nulls(aggregation_column, aggregation_valid);
       }
 
-      return std::make_tuple(groupby_column, aggregation_column, valid_column);
+      return std::make_tuple(groupby_column, aggregation_column, groupby_valid, aggregation_valid);
     }
 
 
@@ -238,7 +244,8 @@ struct GDFGroupByTest : public testing::Test
   std::map<key_type, accumulation_type> 
   dispatch_reference_solution(std::vector<key_type> const & groupby_column,
                               std::vector<value_type> const & aggregation_column,
-                              const gdf_valid_type * const valid_column,
+                              const gdf_valid_type * const groupby_valid,
+                              const gdf_valid_type * const aggregation_valid,
                               bool print = false)
     {
       std::map<key_type, accumulation_type> expected_values;
@@ -248,8 +255,8 @@ struct GDFGroupByTest : public testing::Test
       {
 
         // For each unique key, compute the SUM and COUNT aggregation
-        std::map<key_type, size_t> counts = dispatch_reference_solution<count_op<size_t>, size_t>(groupby_column, aggregation_column, valid_column);
-        std::map<key_type, accumulation_type> sums = dispatch_reference_solution<sum_op<accumulation_type>, accumulation_type>(groupby_column, aggregation_column, valid_column);
+        std::map<key_type, size_t> counts = dispatch_reference_solution<count_op<size_t>, size_t>(groupby_column, aggregation_column, groupby_valid, aggregation_valid);
+        std::map<key_type, accumulation_type> sums = dispatch_reference_solution<sum_op<accumulation_type>, accumulation_type>(groupby_column, aggregation_column, groupby_valid, aggregation_valid);
 
         // For each unique key, compute it's AVG as SUM / COUNT
         for(auto const & sum: sums)
@@ -271,37 +278,45 @@ struct GDFGroupByTest : public testing::Test
         aggregation_operation op;
 
         for(size_t i = 0; i < groupby_column.size(); ++i){
-          bool is_valid = gdf::util::get_bit(valid_column, i);
-          if (is_valid) {
-            key_type current_key = groupby_column[i];
-            value_type current_value = aggregation_column[i];
+          bool valid_key = gdf::util::get_bit(groupby_valid, i);
+          bool valid_value = gdf::util::get_bit(aggregation_valid, i);
+          key_type current_key;
+          if (valid_key) {
+              current_key = groupby_column[i];
+          } else {
+              current_key = std::numeric_limits<key_type>::max(); // is null value. So I use max value
+          }
+          value_type current_value = aggregation_column[i];
 
-            // Use a STL map to keep track of the aggregation for each key
-            auto found = expected_values.find(current_key);
+          // Use a STL map to keep track of the aggregation for each key
+          auto found = expected_values.find(current_key);
 
-            // Key doesn't exist yet, insert it
-            if(found == expected_values.end())
-            {
-              // To support operations like `count`, on the first insert, perform the
-              // operation on the new value and the operation's identity value and store the result
-              const value_type new_value = op(current_value, aggregation_operation::IDENTITY);
+          // Key doesn't exist yet, insert it
+          if(found == expected_values.end())
+          {
+            // To support operations like `count`, on the first insert, perform the
+            // operation on the new value and the operation's identity value and store the result
+            value_type new_value = aggregation_operation::IDENTITY;
+            if (valid_value)
+              new_value = op(current_value, aggregation_operation::IDENTITY);
 
-              if(print)
-                std::cout << "key: " << current_key << " insert value: " << current_value << " new value: " << new_value << std::endl;
+            if(print)
+              std::cout << "key: " << current_key << " insert value: " << current_value << " new value: " << new_value << std::endl;
 
-              expected_values.insert(std::make_pair(current_key,new_value)); 
+            expected_values.insert(std::make_pair(current_key,new_value)); 
 
-            }
-            // Key exists, update the value with the operator
-            else
-            {
-              const value_type new_value = op(current_value, found->second);
+          }
+          // Key exists, update the value with the operator
+          else
+          {
+            value_type new_value = found->second;
+            if (valid_value)
+              new_value = op(current_value, found->second);
 
-              if(print)
-                std::cout << "key: " << current_key << " insert value: " << current_value << " new value: " << new_value << std::endl;
+            if(print)
+              std::cout << "key: " << current_key << " insert value: " << current_value << " new value: " << new_value << std::endl;
 
-              found->second = new_value;
-            }
+            found->second = new_value;
           }
         }
       }
@@ -322,7 +337,8 @@ struct GDFGroupByTest : public testing::Test
   std::map<key_type, agg_output_type> 
   compute_reference_solution(std::vector<key_type> const & groupby_column, 
                              std::vector<value_type> const & aggregation_column,
-                             const gdf_valid_type * const valid_column,
+                             const gdf_valid_type * const groupby_valid,
+                             const gdf_valid_type * const aggregation_valid,
                              bool print = false)
     {
 
@@ -331,27 +347,27 @@ struct GDFGroupByTest : public testing::Test
       {
         case agg_op::MIN:   
           {
-            reference_solution = dispatch_reference_solution<min_op<value_type>>(groupby_column,aggregation_column, valid_column, print);
+            reference_solution = dispatch_reference_solution<min_op<value_type>>(groupby_column,aggregation_column, groupby_valid, aggregation_valid, print);
             break;
           }
         case agg_op::MAX:   
           {
-            reference_solution = dispatch_reference_solution<max_op<agg_output_type>>(groupby_column,aggregation_column, valid_column, print);
+            reference_solution = dispatch_reference_solution<max_op<agg_output_type>>(groupby_column,aggregation_column, groupby_valid, aggregation_valid, print);
             break;
           }
         case agg_op::SUM:   
           {
-            reference_solution = dispatch_reference_solution<sum_op<value_type>>(groupby_column,aggregation_column, valid_column, print);
+            reference_solution = dispatch_reference_solution<sum_op<value_type>>(groupby_column,aggregation_column, groupby_valid, aggregation_valid, print);
             break;
           }
         case agg_op::COUNT: 
           {
-            reference_solution = dispatch_reference_solution<count_op<value_type>>(groupby_column,aggregation_column, valid_column, print);
+            reference_solution = dispatch_reference_solution<count_op<value_type>>(groupby_column,aggregation_column, groupby_valid, aggregation_valid, print);
             break;
           }
         case agg_op::AVG:
           {
-            reference_solution = dispatch_reference_solution<avg_op<value_type>>(groupby_column,aggregation_column, valid_column, print);
+            reference_solution = dispatch_reference_solution<avg_op<value_type>>(groupby_column,aggregation_column, groupby_valid, aggregation_valid, print);
             break;
           }
         default: 
@@ -366,7 +382,7 @@ struct GDFGroupByTest : public testing::Test
 
   gdf_error compute_gdf_result(gdf_column * groupby_input, 
                                gdf_column * aggregation_input, 
-                               const gdf_valid_type * const valid_column,
+                               const gdf_valid_type * const groupby_valid,
                                gdf_column * groupby_output,
                                gdf_column * aggregation_output,
                                bool print = false)
@@ -577,27 +593,30 @@ TYPED_TEST(GDFGroupByTest, ExampleTest)
   // you'll overflow an int when doing SUM or AVG
   std::tie(this->groupby_column, 
            this->aggregation_column,
-           this->valid_column) = this->create_reference_input(num_keys, 
+           this->groupby_valid,
+           this->aggregation_valid) = this->create_reference_input(num_keys, 
                                                                     num_values_per_key,max_key,max_value,
                                                                     true);
 
   auto expected_values = this->compute_reference_solution(this->groupby_column, 
                                                           this->aggregation_column,
-                                                          this->valid_column.get(),
+                                                          this->groupby_valid.get(),
+                                                          this->aggregation_valid.get(),
                                                           true);
 
   // Create gdf_columns with same data as the reference input
-  this->gdf_groupby_column = create_gdf_column(this->groupby_column, this->valid_column.get());
-  this->gdf_aggregation_column = create_gdf_column(this->aggregation_column, this->valid_column.get());
+  this->gdf_groupby_column = create_gdf_column(this->groupby_column, this->groupby_valid.get());
+  this->gdf_aggregation_column = create_gdf_column(this->aggregation_column, this->aggregation_valid.get());
 
   // Allocate buffers for output
   const size_t output_size = this->gdf_groupby_column->size;
+  //@todo, should it be nullptr? or should have pre-allocated memory? 
   this->gdf_groupby_output = create_gdf_column(std::vector<typename TestFixture::key_type>(output_size), nullptr);
   this->gdf_agg_output = create_gdf_column(std::vector<typename TestFixture::agg_output_type>(output_size), nullptr);
 
   this->compute_gdf_result(this->gdf_groupby_column.get(), 
                            this->gdf_aggregation_column.get(),
-                           this->valid_column.get(), 
+                           this->groupby_valid.get(), 
                            this->gdf_groupby_output.get(),
                            this->gdf_agg_output.get());
   
