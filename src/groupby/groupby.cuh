@@ -55,13 +55,16 @@ gdf_error dispatched_groupby(int ncols,
   aggregation_type * in_agg_col = static_cast<aggregation_type *>(in_aggregation_column->data);
   groupby_type * out_group_col = static_cast<groupby_type *>(out_groupby_columns[0]->data);
 
+  const gdf_valid_type * const in_group_valid = in_groupby_columns[0]->valid;
+  const gdf_valid_type * const in_agg_valid = in_aggregation_column->valid;
+  
   // TODO Need to allow for the aggregation output type to be different from the aggregation input type
   aggregation_type * out_agg_col = static_cast<aggregation_type *>(out_aggregation_column->data);
 
   const gdf_size_type in_size = in_groupby_columns[0]->size;
   gdf_size_type out_size{0};
 
-  if(cudaSuccess != GroupbyHash(in_group_col, in_agg_col, in_size, 
+  if(cudaSuccess != GroupbyHash(in_group_col, in_group_valid, in_agg_col, in_agg_valid, in_size, 
                                 out_group_col, out_agg_col, &out_size, op_type(), sort_result))
   {
     return GDF_CUDA_ERROR;

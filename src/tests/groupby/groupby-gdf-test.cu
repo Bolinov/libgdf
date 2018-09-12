@@ -382,7 +382,6 @@ struct GDFGroupByTest : public testing::Test
 
   gdf_error compute_gdf_result(gdf_column * groupby_input, 
                                gdf_column * aggregation_input, 
-                               const gdf_valid_type * const groupby_valid,
                                gdf_column * groupby_output,
                                gdf_column * aggregation_output,
                                bool print = false)
@@ -577,7 +576,7 @@ struct TestParameters
 
 using TestCases = ::testing::Types< 
                                     //Tests for MAX
-                                    TestParameters<int32_t, int32_t, agg_op::COUNT>
+                                    TestParameters<int32_t, int32_t, agg_op::SUM>
                                     >;
 TYPED_TEST_CASE(GDFGroupByTest, TestCases);
 
@@ -616,7 +615,6 @@ TYPED_TEST(GDFGroupByTest, ExampleTest)
 
   this->compute_gdf_result(this->gdf_groupby_column.get(), 
                            this->gdf_aggregation_column.get(),
-                           this->groupby_valid.get(), 
                            this->gdf_groupby_output.get(),
                            this->gdf_agg_output.get());
   
