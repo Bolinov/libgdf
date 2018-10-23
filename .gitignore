@@ -15,6 +15,11 @@ build
 /include/gdf/ipc/Tensor_generated.h
 python/libgdf_cffi/libgdf_cffi.py
 .pytest_cache/
+.gitignore
+*.diff
+cuda-api-wrappers
 
 ## eclipse
 .project
+.cproject
+.settings
