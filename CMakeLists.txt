@@ -42,10 +42,12 @@ include(FeatureSummary)
 include(CheckIncludeFiles)
 include(CheckLibraryExists)
 include(CTest)
+include(ExternalProject)
 
 # Include custom modules (see cmake directory)
 include(ConfigureGoogleTest)
 include(ConfigureArrow)
+include(ConfigureCudaApiWrappers)
 
 find_package(CUDA)
 set_package_properties(
