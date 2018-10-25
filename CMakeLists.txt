@@ -48,6 +48,7 @@ include(ExternalProject)
 include(ConfigureGoogleTest)
 include(ConfigureArrow)
 include(ConfigureCudaApiWrappers)
+include(ConfigureGSL)
 
 find_package(CUDA)
 set_package_properties(
